@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:6.0
+    container_name: drone-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - drone-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: drone-backend
+    ports:
+      - "5000:5000"
+    environment:
+      MONGODB_URI: mongodb://admin:admin@mongodb:27017/drone-system
+      JWT_SECRET: your_jwt_secret_key_change_this_in_production
+      AI_MODEL_URL: http://ai-model:5001
+      NODE_ENV: production
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - drone-network
+    volumes:
+      - ./backend/uploads:/app/uploads
+    restart: unless-stopped
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: drone-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:5000
+    depends_on:
+      - backend
+    networks:
+      - drone-network
+    restart: unless-stopped
+
+  # AI Model API
+  ai-model:
+    build:
+      context: ./ai-model
+      dockerfile: Dockerfile
+    container_name: drone-ai
+    ports:
+      - "5001:5001"
+    environment:
+      FLASK_ENV: production
+    networks:
+      - drone-network
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+
+networks:
+  drone-network:
+    driver: bridge
